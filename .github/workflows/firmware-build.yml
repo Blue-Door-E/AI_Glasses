@@ -5,6 +5,7 @@ on:
     paths:
       - "main/**"
       - "CMakeLists.txt"
+      - "dependencies.lock"
       - "sdkconfig"
       - "sdkconfig.defaults"
       - ".github/workflows/firmware-build.yml"
@@ -14,6 +15,7 @@ on:
     paths:
       - "main/**"
       - "CMakeLists.txt"
+      - "dependencies.lock"
       - "sdkconfig"
       - "sdkconfig.defaults"
       - ".github/workflows/firmware-build.yml"
@@ -23,11 +25,14 @@ jobs:
   build-esp32s3:
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:v5.2.1
+      image: espressif/idf:v5.5.1
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Mark workspace as Git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: ESP-IDF version
         run: . /opt/esp/idf/export.sh && idf.py --version
