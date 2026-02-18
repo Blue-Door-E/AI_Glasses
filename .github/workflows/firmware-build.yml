@@ -23,7 +23,7 @@ jobs:
   build-esp32s3:
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:v5.2.2
+      image: espressif/idf:v5.2.1
 
     steps:
       - name: Checkout
