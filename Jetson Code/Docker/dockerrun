@@ -1,0 +1,10 @@
+sudo docker run -d \
+  --name edith-glasses \
+  --runtime nvidia \
+  --network host \
+  -v /home/erick:/home/erick \
+  -v /opt/edith/entrypoint.sh:/entrypoint.sh:ro \
+  -v /var/run/dbus:/var/run/dbus \
+  -v /run/dbus:/run/dbus \
+  -w /workspace \
+  edith-glasses:jp64

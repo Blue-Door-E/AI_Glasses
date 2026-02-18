@@ -5,6 +5,10 @@
 !.gitignore
 !README.md
 !main/
-
+!Jetson Code/
 # Inside main/, ignore nothing (upload everything in there)
 !main/**
+!Jetson Code/**
+
+# Exclude large Docker image archives
+Jetson Code/Docker/*.tar
