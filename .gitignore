@@ -4,6 +4,12 @@
 # But allow these:
 !.gitignore
 !README.md
+!AGENTS.md
+!CMakeLists.txt
+!sdkconfig
+!sdkconfig.defaults
+!.github/
+!.github/**
 !main/
 !Jetson Code/
 # Inside main/, ignore nothing (upload everything in there)
