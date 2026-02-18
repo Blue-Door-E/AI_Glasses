@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: ESP-IDF version
-        run: idf.py --version
+        run: . /opt/esp/idf/export.sh && idf.py --version
 
       - name: Build firmware (ESP32-S3)
-        run: idf.py -DIDF_TARGET=esp32s3 build
+        run: . /opt/esp/idf/export.sh && idf.py -DIDF_TARGET=esp32s3 build
