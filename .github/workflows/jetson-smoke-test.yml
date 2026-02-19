@@ -21,6 +21,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Free disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache || true
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* || true
+          docker system prune -af || true
+          df -h
+
       - name: Download and load docker image
         shell: bash
         run: |
@@ -31,6 +42,7 @@ jobs:
           echo "Downloading image tar from Hugging Face..."
           curl -fL --retry 3 --retry-delay 5 "$IMAGE_URL" -o "$TAR_PATH"
           docker load -i "$TAR_PATH"
+          rm -f "$TAR_PATH"
 
       - name: Run smoke test in container
         shell: bash
