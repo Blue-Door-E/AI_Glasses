@@ -15,11 +15,18 @@ on:
 
 jobs:
   smoke-test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, arm64]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Log runner OS info
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat /etc/os-release
+          uname -a
 
       - name: Free disk space
         shell: bash
