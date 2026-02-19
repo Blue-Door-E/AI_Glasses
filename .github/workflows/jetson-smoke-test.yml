@@ -21,22 +21,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve docker image
+      - name: Download and load docker image
         shell: bash
         run: |
           set -euo pipefail
-          TAR_PATH="Jetson Code/Docker/edith-glasses_jp64.tar"
+          IMAGE_URL="https://huggingface.co/BlueDoorE/edith-glasses_jp64.tar/resolve/main/edith-glasses_jp64.tar"
+          TAR_PATH="$RUNNER_TEMP/edith-glasses_jp64.tar"
 
-          if [[ -f "$TAR_PATH" ]]; then
-            echo "Found image tar at $TAR_PATH; loading..."
-            docker load -i "$TAR_PATH"
-          elif docker image inspect edith-glasses:jp64 >/dev/null 2>&1; then
-            echo "Using preloaded image edith-glasses:jp64"
-          else
-            echo "Image tar not found and edith-glasses:jp64 is unavailable."
-            echo "Provide Jetson Code/Docker/edith-glasses_jp64.tar or pre-load edith-glasses:jp64 on the runner."
-            exit 1
-          fi
+          echo "Downloading image tar from Hugging Face..."
+          curl -fL --retry 3 --retry-delay 5 "$IMAGE_URL" -o "$TAR_PATH"
+          docker load -i "$TAR_PATH"
 
       - name: Run smoke test in container
         shell: bash
