@@ -28,17 +28,13 @@ jobs:
           cat /etc/os-release
           uname -a
 
-      - name: Download and load docker image
+      - name: Load docker image from local tar
         shell: bash
         run: |
           set -euo pipefail
-          IMAGE_URL="https://huggingface.co/BlueDoorE/edith-glasses_jp64.tar/resolve/main/edith-glasses_jp64.tar"
-          TAR_PATH="$RUNNER_TEMP/edith-glasses_jp64.tar"
-
-          echo "Downloading image tar from Hugging Face..."
-          curl -fL --retry 3 --retry-delay 5 "$IMAGE_URL" -o "$TAR_PATH"
+          TAR_PATH="/home/erick/EDITH_CODE/AI_Glasses/Jetson Code/Docker/edith-glasses_jp64.tar"
+          test -f "$TAR_PATH"
           docker load -i "$TAR_PATH"
-          rm -f "$TAR_PATH"
 
       - name: Run smoke test in container
         shell: bash
