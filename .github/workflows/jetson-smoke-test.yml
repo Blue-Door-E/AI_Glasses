@@ -1,0 +1,50 @@
+name: Jetson Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Jetson Code/**"
+      - ".github/workflows/jetson-smoke-test.yml"
+  pull_request:
+    paths:
+      - "Jetson Code/**"
+      - ".github/workflows/jetson-smoke-test.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAR_PATH="Jetson Code/Docker/edith-glasses_jp64.tar"
+
+          if [[ -f "$TAR_PATH" ]]; then
+            echo "Found image tar at $TAR_PATH; loading..."
+            docker load -i "$TAR_PATH"
+          elif docker image inspect edith-glasses:jp64 >/dev/null 2>&1; then
+            echo "Using preloaded image edith-glasses:jp64"
+          else
+            echo "Image tar not found and edith-glasses:jp64 is unavailable."
+            echo "Provide Jetson Code/Docker/edith-glasses_jp64.tar or pre-load edith-glasses:jp64 on the runner."
+            exit 1
+          fi
+
+      - name: Run smoke test in container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --entrypoint /bin/bash \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            edith-glasses:jp64 \
+            -lc 'python3 "Jetson Code/Code/smoke_test.py"'
