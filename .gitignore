@@ -22,6 +22,7 @@ Jetson Code/Docker/*.tar
 # Local secrets/config for Jetson runtime
 Jetson Code/Code/config.py
 Jetson Code/Code/Config.py
+Jetson Code/Code/__pycache__
 
 # Local secrets/config for firmware
 main/configs.c
