@@ -1,0 +1,71 @@
+name: Jetson Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Jetson Code/**"
+      - ".github/workflows/jetson-smoke-test.yml"
+  pull_request:
+    paths:
+      - "Jetson Code/**"
+      - ".github/workflows/jetson-smoke-test.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: [self-hosted, linux, arm64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log runner OS info
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat /etc/os-release
+          uname -a
+
+      - name: Load docker image from local tar
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          pwd
+          TAR_PATHS=(
+            "$GITHUB_WORKSPACE/Jetson Code/Docker/edith-glasses_jp64.tar"
+            "/home/erick/EDITH_CODE/AI_Glasses/Jetson Code/Docker/edith-glasses_jp64.tar"
+          )
+          FOUND_TAR=""
+          for p in "${TAR_PATHS[@]}"; do
+            if [[ -f "$p" ]]; then
+              FOUND_TAR="$p"
+              break
+            fi
+          done
+          if [[ -n "$FOUND_TAR" ]]; then
+            echo "Found image tar at $FOUND_TAR; loading..."
+            sudo docker load -i "$FOUND_TAR"
+          elif sudo docker image inspect edith-glasses:jp64 >/dev/null 2>&1; then
+            echo "Using preloaded image edith-glasses:jp64"
+          else
+            echo "Image tar not found and edith-glasses:jp64 is unavailable."
+            echo "Checked:"
+            printf '  %s\n' "${TAR_PATHS[@]}"
+            echo "Contents of Jetson Code/Docker in workspace (if present):"
+            ls -la "$GITHUB_WORKSPACE/Jetson Code/Docker" || true
+            exit 1
+          fi
+
+      - name: Run smoke test in container
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo docker run --rm \
+            --entrypoint /bin/bash \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            edith-glasses:jp64 \
+            -lc 'python3 "Jetson Code/Code/smoke_test.py"'

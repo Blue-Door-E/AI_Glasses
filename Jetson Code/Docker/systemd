@@ -1,0 +1,24 @@
+erick@jetson:~/EDITH_CODE/AI_Glasses/Jetson Code/Docker$ sudo systemctl cat edith.service
+# /etc/systemd/system/edith.service
+[Unit]
+Description=E.D.I.T.H Docker (keep running)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+After=docker.service network-online.target bluetooth.service
+Requires=docker.service bluetooth.service
+
+[Service]
+TimeoutStartSec=0
+Restart=always
+RestartSec=2
+
+Environment=CONTAINER_NAME=edith-glasses
+Environment=IMAGE_NAME=edith-glasses:jp64
+
+# Remove previous container if it exists (OK if it doesn't)
+ExecStartPre=-/usr/bin/docker rm -f ${CONTAINER_NAME}
+
+# Run container in foreground so systemd can supervise it
+ExecStart=/usr/bin/docker run --pull=never --name ${CONTAINER_NAME} \
+  --network host \
