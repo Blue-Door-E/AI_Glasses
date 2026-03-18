@@ -23,6 +23,11 @@ Jetson Code/Docker/*.tar
 Jetson Code/Code/config.py
 Jetson Code/Code/Config.py
 
+!CI Pipeline Code/
+CI Pipeline Code/images/*
+
 # Local secrets/config for firmware
 main/configs.c
 main/configs.h
+
+Jetson Code/Code/__pycache__/Demo.cpython-310.pyc
