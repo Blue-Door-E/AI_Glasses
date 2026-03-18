@@ -67,5 +67,6 @@ jobs:
             --entrypoint /bin/bash \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
+            -e PYTHONPATH="/workspace/Jetson Code/Code" \
             edith-glasses:jp64 \
-            -lc 'python3 "Jetson Code/Code/smoke_test.py"'
+            -lc 'python3 "CI Pipeline Code/smoke_test.py"'

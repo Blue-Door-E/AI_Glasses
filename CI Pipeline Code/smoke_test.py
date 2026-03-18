@@ -36,6 +36,22 @@ except ModuleNotFoundError:
     sys.modules["torch"] = torch_stub
 
 
+# config.py holds secrets (gitignored). Stub it out with placeholder values
+# so Demo.py can be imported in CI without the real file present.
+try:
+    import config  # noqa: F401
+except ModuleNotFoundError:
+    config_stub = types.ModuleType("config")
+    config_stub.ADDRESS_TYPE = "random"
+    config_stub.HOST = "111.0.0.1"
+    config_stub.LEFT_MAC = "00:00:00:00:00:00"
+    config_stub.NUS_RX = "11111111-1111-1111-1111-111111111111"
+    config_stub.NUS_TX = "11111111-1111-1111-1111-111111111111"
+    config_stub.PORT = 5000
+    config_stub.RIGHT_MAC = "00:00:00:00:00:00"
+    sys.modules["config"] = config_stub
+
+
 # Demo.py imports bleak at module load. Provide a minimal fallback so this
 # smoke test can still run in constrained CI environments.
 try:
