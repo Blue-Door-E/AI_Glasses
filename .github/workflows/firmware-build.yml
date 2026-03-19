@@ -34,11 +34,12 @@ jobs:
       - name: Mark workspace as Git safe.directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Generate Wi-Fi config header
+      - name: Generate Wi-Fi config files
         env:
           AP_SSID: ${{ secrets.AP_SSID }}
           AP_PASS: ${{ secrets.AP_PASS }}
         run: |
+          : > main/configs.c
           cat > main/configs.h <<EOF
           #define AP_SSID "${AP_SSID}"
           #define AP_PASS "${AP_PASS}"
