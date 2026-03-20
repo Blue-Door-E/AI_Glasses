@@ -18,10 +18,14 @@
 
 # Exclude large Docker image archives
 Jetson Code/Docker/*.tar
-
+Jetson Code/models/
 # Local secrets/config for Jetson runtime
 Jetson Code/Code/config.py
 Jetson Code/Code/Config.py
+Jetson Code/Code/__pycache__
+
+!CI Pipeline Code/
+CI Pipeline Code/images/*
 
 !CI Pipeline Code/
 CI Pipeline Code/images/*

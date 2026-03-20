@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""CI smoke tests for Jetson runtime expectations in Demo.py.
+"""CI smoke tests for the split Jetson runtime modules.
 
 These tests intentionally avoid real BLE/camera/network hardware. They verify
 that core interfaces exist and that pure-Python logic behaves as expected.
 """
 
-import asyncio
+import importlib
+import importlib.util
 import inspect
 import os
 import sys
@@ -14,7 +15,29 @@ import types
 import unittest
 
 
-# Demo.py decorates methods with @torch.no_grad() at import time. If torch is
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CODE_DIR = os.path.join(REPO_ROOT, "Jetson Code", "Code")
+CONFIG_PATH = os.path.join(CODE_DIR, "config.py")
+
+if CODE_DIR not in sys.path:
+    sys.path.insert(0, CODE_DIR)
+
+
+try:
+    import numpy  # noqa: F401
+except ModuleNotFoundError:
+    numpy_stub = types.ModuleType("numpy")
+    numpy_stub.ndarray = object
+    numpy_stub.uint8 = "uint8"
+
+    def _frombuffer(data, *_args, **_kwargs):
+        return data
+
+    numpy_stub.frombuffer = _frombuffer
+    sys.modules["numpy"] = numpy_stub
+
+
+# ML.py decorates methods with @torch.no_grad() at import time. If torch is
 # absent, provide a tiny compatibility stub so import can still proceed.
 try:
     import torch  # noqa: F401
@@ -36,23 +59,42 @@ except ModuleNotFoundError:
     sys.modules["torch"] = torch_stub
 
 
-# config.py holds secrets (gitignored). Stub it out with placeholder values
-# so Demo.py can be imported in CI without the real file present.
-try:
-    import config  # noqa: F401
-except ModuleNotFoundError:
+def _load_local_config():
+    if os.path.exists(CONFIG_PATH):
+        spec = importlib.util.spec_from_file_location("config", CONFIG_PATH)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Unable to load config from {CONFIG_PATH}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["config"] = module
+        spec.loader.exec_module(module)
+        return module
+
     config_stub = types.ModuleType("config")
     config_stub.ADDRESS_TYPE = "random"
+    config_stub.BLE_CHUNK = 180
+    config_stub.CONF_THRESHOLD = 0.70
     config_stub.HOST = "111.0.0.1"
+    config_stub.IMG_SIZE = 400
     config_stub.LEFT_MAC = "00:00:00:00:00:00"
+    config_stub.MODEL_DIR = "outputs/Hide"
     config_stub.NUS_RX = "11111111-1111-1111-1111-111111111111"
     config_stub.NUS_TX = "11111111-1111-1111-1111-111111111111"
     config_stub.PORT = 5000
+    config_stub.PRINT_EVERY_N = 30
     config_stub.RIGHT_MAC = "00:00:00:00:00:00"
+    config_stub.SAVE_COOLDOWN_SEC = 2.0
+    config_stub.SAVE_DIR = "dataset/live_capture"
+    config_stub.SAVE_EVERY_N_GLOBAL = 20
+    config_stub.SAVE_UNCERTAIN = True
+    config_stub.UI_REFRESH_SEC = 0.3
     sys.modules["config"] = config_stub
+    return config_stub
 
 
-# Demo.py imports bleak at module load. Provide a minimal fallback so this
+config = _load_local_config()
+
+
+# BLE.py imports bleak at module load. Provide a minimal fallback so this
 # smoke test can still run in constrained CI environments.
 try:
     import bleak  # noqa: F401
@@ -64,23 +106,41 @@ except ModuleNotFoundError:
             self.is_connected = False
             self.mtu_size = 23
 
+        async def connect(self):
+            self.is_connected = True
+
+        async def disconnect(self):
+            self.is_connected = False
+
+        async def start_notify(self, *_args, **_kwargs):
+            return None
+
+        async def write_gatt_char(self, *_args, **_kwargs):
+            return None
+
+        def set_disconnected_callback(self, *_args, **_kwargs):
+            return None
+
     bleak_stub.BleakClient = _BleakClientStub
     sys.modules["bleak"] = bleak_stub
 
 
-import Demo  # noqa: E402
+main_module = importlib.import_module("main")
+ble_module = importlib.import_module("BLE")
+display_module = importlib.import_module("Display")
+ml_module = importlib.import_module("ML")
 
 
-class DemoSmokeTest(unittest.TestCase):
+class JetsonRuntimeSmokeTest(unittest.TestCase):
     def test_core_constants_exist(self):
-        self.assertIsInstance(Demo.LEFT_MAC, str)
-        self.assertIsInstance(Demo.RIGHT_MAC, str)
-        self.assertIsInstance(Demo.HOST, str)
-        self.assertIsInstance(Demo.PORT, int)
-        self.assertGreater(Demo.BLE_CHUNK, 0)
+        self.assertIsInstance(config.LEFT_MAC, str)
+        self.assertIsInstance(config.RIGHT_MAC, str)
+        self.assertIsInstance(config.HOST, str)
+        self.assertIsInstance(config.PORT, int)
+        self.assertGreater(config.BLE_CHUNK, 0)
 
     def test_live_state_contract(self):
-        state = Demo.LiveState()
+        state = main_module.LiveState()
         self.assertTrue(hasattr(state, "prediction"))
         self.assertTrue(hasattr(state, "confidence"))
         self.assertTrue(hasattr(state, "file_index"))
@@ -90,7 +150,7 @@ class DemoSmokeTest(unittest.TestCase):
     def test_find_latest_model_handles_missing_path(self):
         with tempfile.TemporaryDirectory() as tdir:
             missing_dir = os.path.join(tdir, "does_not_exist")
-            self.assertIsNone(Demo.find_latest_model(missing_dir))
+            self.assertIsNone(ml_module.find_latest_model(missing_dir))
 
     def test_find_latest_model_prefers_newest_valid_dir(self):
         with tempfile.TemporaryDirectory() as tdir:
@@ -111,14 +171,14 @@ class DemoSmokeTest(unittest.TestCase):
             os.utime(old_dir, (1, 1))
             os.utime(new_dir, (2, 2))
 
-            found = Demo.find_latest_model(tdir)
+            found = ml_module.find_latest_model(tdir)
             self.assertIsNotNone(found)
             model_path, labels_path = found
             self.assertEqual(model_path, new_model)
             self.assertEqual(labels_path, new_labels)
 
     def test_compose_text_shape(self):
-        state = Demo.LiveState(
+        state = main_module.LiveState(
             connected=True,
             prediction="person",
             confidence=0.93,
@@ -131,21 +191,21 @@ class DemoSmokeTest(unittest.TestCase):
             last_saved_conf=0.93,
             last_saved_kind="global",
         )
-        text = Demo.compose_text(state)
+        text = display_module.compose_text(state)
         lines = text.splitlines()
         self.assertEqual(len(lines), 4)
         self.assertIn("Prediction: person", lines[1])
         self.assertIn("Frame #: 42", lines[3])
 
     def test_main_and_stream_entrypoints_exist(self):
-        self.assertTrue(callable(Demo.stream_loop))
-        self.assertTrue(callable(Demo.main))
-        self.assertTrue(inspect.iscoroutinefunction(Demo.main))
+        self.assertTrue(callable(display_module.stream_loop))
+        self.assertTrue(callable(main_module.main))
+        self.assertTrue(inspect.iscoroutinefunction(main_module.main))
 
 
-class DemoBlePacketSmokeTest(unittest.IsolatedAsyncioTestCase):
+class JetsonBlePacketSmokeTest(unittest.IsolatedAsyncioTestCase):
     async def test_text_0x4e_chunking_and_header(self):
-        ble = Demo.DualBLE("left", "right")
+        ble = ble_module.DualBLE("left", "right")
         ble._payload = 20
         sent = []
 
@@ -175,7 +235,7 @@ class DemoBlePacketSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reconstructed.decode("utf-8"), "Smoke test packet chunking")
 
     async def test_safe_text_0x4e_retries_on_not_connected(self):
-        ble = Demo.DualBLE("left", "right")
+        ble = ble_module.DualBLE("left", "right")
         calls = {"ensure": 0, "text": 0, "disconnect": 0, "connect": 0}
 
         async def ensure_connected():

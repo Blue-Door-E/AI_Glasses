@@ -1,6 +1,6 @@
 # main/CMakeLists.txt
 set(SRCS
-    blink_example_main.c
+    main.c
     configs.c
     cam.c 
     AP.c
