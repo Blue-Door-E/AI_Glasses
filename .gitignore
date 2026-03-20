@@ -27,6 +27,9 @@ Jetson Code/Code/__pycache__
 !CI Pipeline Code/
 CI Pipeline Code/images/*
 
+!CI Pipeline Code/
+CI Pipeline Code/images/*
+
 # Local secrets/config for firmware
 main/configs.c
 main/configs.h
