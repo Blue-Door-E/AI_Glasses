@@ -60,13 +60,27 @@ sudo docker run -d \
   --name edith-glasses \
   --runtime nvidia \
   --network host \
-  -v /home/erick:/home/erick \
+  -v "/home/CI_Pipeline/AI_Glasses/Jetson Code/Code:/home/erick/EDITH_CODE" \
   -v /opt/edith/entrypoint.sh:/entrypoint.sh:ro \
   -v /var/run/dbus:/var/run/dbus \
   -v /run/dbus:/run/dbus \
   -w /workspace \
   edith-glasses:jp64
 ```
+Run just the container 
+sudo docker run -it \
+  --name edith-glasses \
+  --runtime nvidia \
+  --network host \
+  -v "/home/CI_Pipeline/AI_Glasses/Jetson Code/Code:/home/erick/EDITH_CODE" \
+  -v /opt/edith/entrypoint.sh:/entrypoint.sh:ro \
+  -v /var/run/dbus:/var/run/dbus \
+  -v /run/dbus:/run/dbus \
+  -w /workspace \
+  edith-glasses:jp64
+```
+
+
 
 ## Auto-Start On Reboot (systemd)
 
