@@ -52,7 +52,7 @@ except ModuleNotFoundError:
     sys.modules["bleak"] = bleak_stub
 
 
-import Demo  # noqa: E402
+import main  # noqa: E402
 
 
 class DemoSmokeTest(unittest.TestCase):
