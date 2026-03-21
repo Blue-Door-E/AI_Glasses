@@ -47,8 +47,8 @@ jobs:
           done
           if [[ -n "$FOUND_TAR" ]]; then
             echo "Found image tar at $FOUND_TAR; loading..."
-            sudo docker load -i "$FOUND_TAR"
-          elif sudo docker image inspect edith-glasses:jp64 >/dev/null 2>&1; then
+            docker load -i "$FOUND_TAR"
+          elif docker image inspect edith-glasses:jp64 >/dev/null 2>&1; then
             echo "Using preloaded image edith-glasses:jp64"
           else
             echo "Image tar not found and edith-glasses:jp64 is unavailable."
@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo docker run --rm \
+          docker run --rm \
             --entrypoint /bin/bash \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
