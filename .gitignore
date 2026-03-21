@@ -12,9 +12,11 @@
 !.github/**
 !main/
 !Jetson Code/
+!ML Notebook/ 
 # Inside main/, ignore nothing (upload everything in there)
 !main/**
 !Jetson Code/**
+!ML Notebook/** 
 
 # Exclude large Docker image archives
 Jetson Code/Docker/*.tar
