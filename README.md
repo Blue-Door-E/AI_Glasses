@@ -44,8 +44,8 @@ The entire pipeline runs locally. No internet connection is required for core fu
 ## Project Structure
 
 ```
-├── firmware/          ESP32-S3 FreeRTOS camera + Wi-Fi streaming firmware (C)
-├── jetson/            Jetson ML inference engine + BLE glasses driver (Python)
+├── Main/          ESP32-S3 FreeRTOS camera + Wi-Fi streaming firmware (C)
+├── jetson code/            Jetson ML inference engine + BLE glasses driver (Python)
 ├── LICENSE            MIT License
 └── README.md
 ```
