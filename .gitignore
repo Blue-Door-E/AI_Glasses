@@ -21,6 +21,8 @@
 # Exclude large Docker image archives
 Jetson Code/Docker/*.tar
 Jetson Code/models/
+Jetson Code/blobs/*
+
 # Local secrets/config for Jetson runtime
 Jetson Code/Code/config.py
 Jetson Code/Code/Config.py
@@ -38,3 +40,7 @@ main/configs.h
 
 Jetson Code/Code/__pycache__/Demo.cpython-310.pyc
 Jetson Code/edith-glasses_jp64.tar
+Jetson Code/index.json
+Jetson Code/manifest.json
+Jetson Code/oci-layout
+Jetson Code/repositories
