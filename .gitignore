@@ -26,7 +26,6 @@ Jetson Code/blobs/*
 # Local secrets/config for Jetson runtime
 Jetson Code/Code/config.py
 Jetson Code/Code/Config.py
-Jetson Code/Code/__pycache__
 
 !CI Pipeline Code/
 CI Pipeline Code/images/*
@@ -38,9 +37,22 @@ CI Pipeline Code/images/*
 main/configs.c
 main/configs.h
 
-Jetson Code/Code/__pycache__/Demo.cpython-310.pyc
 Jetson Code/edith-glasses_jp64.tar
 Jetson Code/index.json
 Jetson Code/manifest.json
 Jetson Code/oci-layout
 Jetson Code/repositories
+
+# OS/editor/runtime junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+*.swp
+*.swo
+*.tmp
+*.temp
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
