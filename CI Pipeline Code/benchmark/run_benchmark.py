@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -96,80 +97,57 @@ def _start_replay(video: str, host: str, port: int, fps: float) -> subprocess.Po
     return proc
 
 
-def _build_runtime_cmd(runtime_dir: str, overlay: Path | None = None) -> list[str]:
-    """Build the command to run the benchmark.
-
-    If an overlay exists, runs the launcher script which pre-loads the
-    BLE stub before exec'ing main.py. Otherwise runs main.py directly.
-    """
-    if overlay:
-        launcher = overlay / "_bench_launcher.py"
-        if launcher.exists():
-            return [sys.executable, "-u", str(launcher)]
-    return [sys.executable, "-u", str(Path(runtime_dir).resolve() / "main.py")]
+def _build_runtime_cmd(runtime_dir: str) -> list[str]:
+    """Build the command to run main.py directly."""
+    return [sys.executable, "-u", str(Path(runtime_dir) / "main.py")]
 
 
 def _build_runtime_env(runtime_dir: str, host: str, port: int) -> dict[str, str]:
-    """Build env vars that inject the BLE stub and replay endpoint."""
+    """Build env vars that inject the replay endpoint."""
     env = os.environ.copy()
-    # Point the runtime at the local replay server
     env["GLASSES_HOST"] = host
     env["GLASSES_PORT"] = str(port)
-    # The runtime dir must be on PYTHONPATH so sibling imports
-    # (Display, ML, config) still resolve.
     env["PYTHONPATH"] = f"{runtime_dir}{os.pathsep}{env.get('PYTHONPATH', '')}"
     return env
 
 
-def _setup_ble_stub(runtime_dir: str) -> Path | None:
-    """Create a bootstrap wrapper that hijacks `BLE` before main.py runs.
+def _setup_ble_stub(runtime_dir: str) -> Path:
+    """Swap the real BLE.py with the stub. Returns path to the backup.
 
-    Python adds the *script's* directory to sys.path[0], so a PYTHONPATH
-    overlay can't shadow modules in the same directory as main.py.
-
-    Instead, we write a thin launcher script that:
-      1. Inserts the overlay dir at sys.path[0]
-      2. Pre-loads our stub as the 'BLE' module in sys.modules
-      3. exec's the real main.py
-
-    This way `from BLE import DualBLE` in main.py resolves to our stub.
+    This is the most reliable injection method — main.py runs exactly as
+    in production, but `from BLE import DualBLE` picks up the stub since
+    it physically replaces the file in the same directory.
     """
-    overlay = Path(runtime_dir).parent / "_bench_overlay"
-    overlay.mkdir(parents=True, exist_ok=True)
-
-    # Copy the stub as BLE.py in the overlay
+    real_ble = Path(runtime_dir) / "BLE.py"
+    backup = Path(runtime_dir) / "BLE.py.bench_backup"
     stub_src = BENCH_DIR / "ble_stub.py"
-    shim_ble = overlay / "BLE.py"
-    shim_ble.write_text(stub_src.read_text())
 
-    # Write the launcher that pre-loads the stub module
-    launcher = overlay / "_bench_launcher.py"
-    runtime_main = str(Path(runtime_dir).resolve() / "main.py")
-    runtime_dir_resolved = str(Path(runtime_dir).resolve())
-    overlay_resolved = str(overlay.resolve())
-    launcher.write_text(
-        '"""Auto-generated benchmark launcher."""\n'
-        "import os, runpy, sys\n"
-        "# Ensure overlay is first so our stub BLE.py wins over the real one\n"
-        f'sys.path.insert(0, r"{overlay_resolved}")\n'
-        "# Pre-load stub BLE module before main.py imports it\n"
-        "import BLE as _ble_stub\n"
-        'sys.modules["BLE"] = _ble_stub\n'
-        'print("[Launcher] BLE stub loaded:", _ble_stub.__file__, flush=True)\n'
-        "# Run the real main.py — runpy adds its directory to sys.path[0]\n"
-        "# so sibling imports (config, Display, ML) resolve correctly\n"
-        f'os.chdir(r"{runtime_dir_resolved}")\n'
-        f'runpy.run_path(r"{runtime_main}", run_name="__main__")\n'
-    )
-    print(f"[Harness] BLE stub overlay -> {overlay}")
-    print(f"[Harness] Launcher -> {launcher}")
-    return overlay
+    # Backup the real BLE.py
+    if real_ble.exists():
+        shutil.copy2(real_ble, backup)
+        print(f"[Harness] Backed up BLE.py -> {backup}")
+
+    # Overwrite with stub
+    shutil.copy2(stub_src, real_ble)
+    print(f"[Harness] Injected BLE stub -> {real_ble}")
+
+    # Remove any cached bytecode so Python doesn't use stale .pyc
+    pycache = Path(runtime_dir) / "__pycache__"
+    if pycache.exists():
+        for f in pycache.glob("BLE.cpython-*.pyc"):
+            f.unlink()
+            print(f"[Harness] Removed cached {f.name}")
+
+    return backup
 
 
-def _cleanup_ble_stub(overlay: Path | None) -> None:
-    if overlay and overlay.exists():
-        import shutil
-        shutil.rmtree(overlay, ignore_errors=True)
+def _cleanup_ble_stub(runtime_dir: str, backup: Path) -> None:
+    """Restore the real BLE.py from backup."""
+    real_ble = Path(runtime_dir) / "BLE.py"
+    if backup.exists():
+        shutil.copy2(backup, real_ble)
+        backup.unlink()
+        print(f"[Harness] Restored BLE.py from backup")
 
 
 def _collect_runtime_metrics(stdout_text: str, exit_code: int, duration_s: float) -> dict:
@@ -229,8 +207,8 @@ def run(
     tegra_log = arts / "tegrastats.log"
     runtime_log = arts / "runtime_stdout.log"
 
-    # --- Setup ---
-    overlay = _setup_ble_stub(runtime_dir)
+    # --- Setup: swap BLE.py with stub ---
+    ble_backup = _setup_ble_stub(runtime_dir)
 
     # --- Start tegrastats (may already be running on the host) ---
     tegra_proc = None
@@ -246,7 +224,7 @@ def run(
     time.sleep(2)
 
     # --- Build runtime command ---
-    runtime_cmd = _build_runtime_cmd(runtime_dir, overlay)
+    runtime_cmd = _build_runtime_cmd(runtime_dir)
     runtime_env = _build_runtime_env(runtime_dir, REPLAY_HOST, REPLAY_PORT)
 
     # --- Optionally wrap with Nsight ---
@@ -319,8 +297,8 @@ def run(
         except subprocess.TimeoutExpired:
             tegra_proc.kill()
 
-    # --- Cleanup BLE stub overlay ---
-    _cleanup_ble_stub(overlay)
+    # --- Restore real BLE.py ---
+    _cleanup_ble_stub(runtime_dir, ble_backup)
 
     # --- Parse metrics ---
     runtime_metrics = _collect_runtime_metrics(stdout_text, exit_code, duration_s)
