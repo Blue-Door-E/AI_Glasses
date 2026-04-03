@@ -101,23 +101,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Video paths — adjust to actual locations on the runner
-          SHORT_VIDEO="/home/erick/benchmark_videos/bench_2min.mp4"
-          LONG_VIDEO="/home/erick/benchmark_videos/bench_30min.mp4"
+          # Host paths — used to verify the file exists on the runner
+          SHORT_HOST="/home/erick/benchmark_videos/bench_2min.mp4"
+          LONG_HOST="/home/erick/benchmark_videos/bench_30min.mp4"
+
+          # Container paths — the volume is mounted as /benchmark_videos
+          SHORT_CONTAINER="/benchmark_videos/bench_2min.mp4"
+          LONG_CONTAINER="/benchmark_videos/bench_30min.mp4"
 
           if [[ "$BENCH_MODE" == "nightly-long" ]]; then
-            VIDEO="$LONG_VIDEO"
+            HOST_VIDEO="$LONG_HOST"
+            CONTAINER_VIDEO="$LONG_CONTAINER"
           else
-            VIDEO="$SHORT_VIDEO"
+            HOST_VIDEO="$SHORT_HOST"
+            CONTAINER_VIDEO="$SHORT_CONTAINER"
           fi
 
-          if [[ ! -f "$VIDEO" ]]; then
-            echo "::error::Benchmark video not found: $VIDEO"
+          if [[ ! -f "$HOST_VIDEO" ]]; then
+            echo "::error::Benchmark video not found: $HOST_VIDEO"
             echo "Place benchmark videos in /home/erick/benchmark_videos/"
             exit 1
           fi
-          echo "video=$VIDEO" >> "$GITHUB_OUTPUT"
-          echo "Selected video: $VIDEO"
+          echo "video=$CONTAINER_VIDEO" >> "$GITHUB_OUTPUT"
+          echo "Selected video: $HOST_VIDEO (container: $CONTAINER_VIDEO)"
 
       - name: Run benchmark in container
         shell: bash
