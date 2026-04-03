@@ -149,18 +149,17 @@ def _setup_ble_stub(runtime_dir: str) -> Path | None:
     overlay_resolved = str(overlay.resolve())
     launcher.write_text(
         '"""Auto-generated benchmark launcher."""\n'
-        "import importlib, os, sys, types\n"
-        f'sys.path.insert(0, r"{runtime_dir_resolved}")\n'
+        "import os, runpy, sys\n"
+        "# Ensure overlay is first so our stub BLE.py wins over the real one\n"
         f'sys.path.insert(0, r"{overlay_resolved}")\n'
-        'print("[Launcher] sys.path:", sys.path[:6], flush=True)\n'
-        'print("[Launcher] PYTHONPATH:", os.environ.get("PYTHONPATH", ""), flush=True)\n'
         "# Pre-load stub BLE module before main.py imports it\n"
         "import BLE as _ble_stub\n"
         'sys.modules["BLE"] = _ble_stub\n'
         'print("[Launcher] BLE stub loaded:", _ble_stub.__file__, flush=True)\n'
-        "# Now exec the real main.py in the runtime directory context\n"
+        "# Run the real main.py — runpy adds its directory to sys.path[0]\n"
+        "# so sibling imports (config, Display, ML) resolve correctly\n"
         f'os.chdir(r"{runtime_dir_resolved}")\n'
-        f'exec(compile(open(r"{runtime_main}").read(), r"{runtime_main}", "exec"))\n'
+        f'runpy.run_path(r"{runtime_main}", run_name="__main__")\n'
     )
     print(f"[Harness] BLE stub overlay -> {overlay}")
     print(f"[Harness] Launcher -> {launcher}")
