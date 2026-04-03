@@ -157,6 +157,7 @@ jobs:
             --entrypoint /bin/bash \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "/home/erick/benchmark_videos:/benchmark_videos:ro" \
+            -v "/home/CI_Pipeline/AI_Glasses/Jetson Code/Code/config.py:/workspace/Jetson Code/Code/config.py:ro" \
             -w /workspace \
             -e PYTHONPATH="/workspace/Jetson Code/Code" \
             -e GLASSES_HOST="127.0.0.1" \
