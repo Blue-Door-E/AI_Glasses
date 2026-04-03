@@ -54,13 +54,10 @@ jobs:
       BENCH_DOCKER_IMAGE: edith-glasses:jp64
 
     steps:
-      - name: Pre-clean workspace (fix root-owned files from Docker)
-        if: always()
+      - name: Fix root-owned files from prior Docker run
         shell: bash
         run: |
-          sudo find "${{ github.workspace }}" -mindepth 1 \
-            \( -name '__pycache__' -o -name '_bench_overlay' -o -name 'benchmark_artifacts' \) \
-            -exec rm -rf {} + 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}" 2>/dev/null || true
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -187,6 +184,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          sudo find "${{ github.workspace }}" -mindepth 1 \
-            \( -name '__pycache__' -o -name '_bench_overlay' -o -name 'benchmark_artifacts' \) \
-            -exec rm -rf {} + 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}" 2>/dev/null || true
