@@ -96,9 +96,17 @@ def _start_replay(video: str, host: str, port: int, fps: float) -> subprocess.Po
     return proc
 
 
-def _build_runtime_cmd(runtime_dir: str) -> list[str]:
-    """Build the command to run main.py with BLE stubbed out."""
-    return [sys.executable, "-u", str(Path(runtime_dir) / "main.py")]
+def _build_runtime_cmd(runtime_dir: str, overlay: Path | None = None) -> list[str]:
+    """Build the command to run the benchmark.
+
+    If an overlay exists, runs the launcher script which pre-loads the
+    BLE stub before exec'ing main.py. Otherwise runs main.py directly.
+    """
+    if overlay:
+        launcher = overlay / "_bench_launcher.py"
+        if launcher.exists():
+            return [sys.executable, "-u", str(launcher)]
+    return [sys.executable, "-u", str(Path(runtime_dir).resolve() / "main.py")]
 
 
 def _build_runtime_env(runtime_dir: str, host: str, port: int) -> dict[str, str]:
@@ -107,32 +115,51 @@ def _build_runtime_env(runtime_dir: str, host: str, port: int) -> dict[str, str]
     # Point the runtime at the local replay server
     env["GLASSES_HOST"] = host
     env["GLASSES_PORT"] = str(port)
-    # Inject BLE stub: prepend the benchmark dir to PYTHONPATH so that
-    # `from BLE import DualBLE` resolves to ble_stub.py's DualBLE.
-    # We rename ble_stub -> BLE in a temp symlink created by the harness.
+    # The runtime dir must be on PYTHONPATH so sibling imports
+    # (Display, ML, config) still resolve.
     env["PYTHONPATH"] = f"{runtime_dir}{os.pathsep}{env.get('PYTHONPATH', '')}"
     return env
 
 
 def _setup_ble_stub(runtime_dir: str) -> Path | None:
-    """Create a temporary BLE.py override that imports the stub.
+    """Create a bootstrap wrapper that hijacks `BLE` before main.py runs.
 
-    We write a shim BLE.py into a temporary overlay directory that gets
-    prepended to PYTHONPATH so `from BLE import DualBLE` loads the stub.
-    The real BLE.py in runtime_dir is untouched.
+    Python adds the *script's* directory to sys.path[0], so a PYTHONPATH
+    overlay can't shadow modules in the same directory as main.py.
+
+    Instead, we write a thin launcher script that:
+      1. Inserts the overlay dir at sys.path[0]
+      2. Pre-loads our stub as the 'BLE' module in sys.modules
+      3. exec's the real main.py
+
+    This way `from BLE import DualBLE` in main.py resolves to our stub.
     """
     overlay = Path(runtime_dir).parent / "_bench_overlay"
     overlay.mkdir(parents=True, exist_ok=True)
-    shim = overlay / "BLE.py"
-    # Use the absolute path to ble_stub so it works regardless of CWD
-    stub_path = str(BENCH_DIR).replace("\\", "\\\\")
-    shim.write_text(
-        '"""Auto-generated BLE overlay for benchmarking."""\n'
-        "import sys as _sys\n"
-        f'_sys.path.insert(0, r"{stub_path}")\n'
-        "from ble_stub import DualBLE  # noqa: F401\n"
+
+    # Copy the stub as BLE.py in the overlay
+    stub_src = BENCH_DIR / "ble_stub.py"
+    shim_ble = overlay / "BLE.py"
+    shim_ble.write_text(stub_src.read_text())
+
+    # Write the launcher that pre-loads the stub module
+    launcher = overlay / "_bench_launcher.py"
+    runtime_main = str(Path(runtime_dir).resolve() / "main.py")
+    runtime_dir_resolved = str(Path(runtime_dir).resolve())
+    overlay_resolved = str(overlay.resolve())
+    launcher.write_text(
+        '"""Auto-generated benchmark launcher."""\n'
+        "import importlib, sys, types\n"
+        f'sys.path.insert(0, r"{overlay_resolved}")\n'
+        f'sys.path.insert(1, r"{runtime_dir_resolved}")\n'
+        "# Pre-load stub BLE module before main.py imports it\n"
+        "import BLE as _ble_stub\n"
+        'sys.modules["BLE"] = _ble_stub\n'
+        "# Now exec the real main.py\n"
+        f'exec(open(r"{runtime_main}").read())\n'
     )
-    print(f"[Harness] BLE stub overlay -> {shim}")
+    print(f"[Harness] BLE stub overlay -> {overlay}")
+    print(f"[Harness] Launcher -> {launcher}")
     return overlay
 
 
@@ -216,12 +243,8 @@ def run(
     time.sleep(2)
 
     # --- Build runtime command ---
-    runtime_cmd = _build_runtime_cmd(runtime_dir)
+    runtime_cmd = _build_runtime_cmd(runtime_dir, overlay)
     runtime_env = _build_runtime_env(runtime_dir, REPLAY_HOST, REPLAY_PORT)
-
-    # Prepend overlay to PYTHONPATH so BLE stub takes precedence
-    if overlay:
-        runtime_env["PYTHONPATH"] = f"{overlay}{os.pathsep}{runtime_env['PYTHONPATH']}"
 
     # --- Optionally wrap with Nsight ---
     if cfg["nsight"]:
