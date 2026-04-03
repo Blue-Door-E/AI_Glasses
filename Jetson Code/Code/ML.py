@@ -38,10 +38,10 @@ def find_latest_model(model_dir="outputs") -> Optional[Tuple[str, str]]:
                 if os.path.isdir(os.path.join(model_dir, d))]
         subs.sort(key=lambda d: os.path.getmtime(d), reverse=True)
         for d in subs:
-            m, l = os.path.join(d, "resnet18_scripted.pt"), os.path.join(d, "labels.txt")
+            m, l = os.path.join(d, "400x400resnet18_scripted.pt"), os.path.join(d, "labels.txt")
             if os.path.exists(m) and os.path.exists(l):
                 return m, l
-        m, l = os.path.join(model_dir, "resnet18_scripted.pt"), os.path.join(model_dir, "labels.txt")
+        m, l = os.path.join(model_dir, "400x400resnet18_scripted.pt"), os.path.join(model_dir, "labels.txt")
         if os.path.exists(m) and os.path.exists(l):
             return m, l
     except Exception:
