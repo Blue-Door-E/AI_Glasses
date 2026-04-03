@@ -51,7 +51,7 @@ class LiveState:
 STATE = LiveState()
 
 
-async def main():
+async def main(int BLE):
     ble = DualBLE(LEFT_MAC, RIGHT_MAC)
     print("[BLE] Connecting...")
     await ble.connect()
