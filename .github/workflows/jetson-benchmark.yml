@@ -125,13 +125,31 @@ jobs:
           echo "video=$CONTAINER_VIDEO" >> "$GITHUB_OUTPUT"
           echo "Selected video: $HOST_VIDEO (container: $CONTAINER_VIDEO)"
 
+      - name: Start tegrastats on host
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACTS_DIR="$GITHUB_WORKSPACE/benchmark_artifacts"
+          mkdir -p "$ARTIFACTS_DIR"
+
+          INTERVAL=500
+          if [[ "$BENCH_MODE" == "nightly-long" ]]; then
+            INTERVAL=1000
+          fi
+
+          # tegrastats is a host-level Jetson tool — must run outside Docker
+          if command -v tegrastats &>/dev/null; then
+            tegrastats --interval "$INTERVAL" > "$ARTIFACTS_DIR/tegrastats.log" 2>&1 &
+            echo "$!" > "$ARTIFACTS_DIR/tegrastats.pid"
+            echo "tegrastats started (pid=$(cat "$ARTIFACTS_DIR/tegrastats.pid"), interval=${INTERVAL}ms)"
+          else
+            echo "::warning::tegrastats not found on host"
+          fi
+
       - name: Run benchmark in container
         shell: bash
         run: |
           set -euo pipefail
-
-          ARTIFACTS_DIR="$GITHUB_WORKSPACE/benchmark_artifacts"
-          mkdir -p "$ARTIFACTS_DIR"
 
           docker run --rm \
             --runtime nvidia \
@@ -144,7 +162,6 @@ jobs:
             -e GLASSES_HOST="127.0.0.1" \
             -e GLASSES_PORT="8080" \
             -e GITHUB_SHA="${GITHUB_SHA}" \
-            -e GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}" \
             -e RUNNER_NAME="${RUNNER_NAME:-}" \
             -e BENCH_MODE="${BENCH_MODE}" \
             -e BENCH_DOCKER_IMAGE="${BENCH_DOCKER_IMAGE}" \
@@ -157,6 +174,29 @@ jobs:
                 --runtime-dir '/workspace/Jetson Code/Code' \
                 --commit '${GITHUB_SHA}'
             "
+
+      - name: Stop tegrastats
+        if: always()
+        shell: bash
+        run: |
+          PID_FILE="$GITHUB_WORKSPACE/benchmark_artifacts/tegrastats.pid"
+          if [[ -f "$PID_FILE" ]]; then
+            kill "$(cat "$PID_FILE")" 2>/dev/null || true
+            rm -f "$PID_FILE"
+            echo "tegrastats stopped"
+          fi
+
+      - name: Print runtime log (debug)
+        if: always()
+        shell: bash
+        run: |
+          LOG="$GITHUB_WORKSPACE/benchmark_artifacts/runtime_stdout.log"
+          if [[ -f "$LOG" ]]; then
+            echo "=== Runtime stdout ==="
+            cat "$LOG"
+          else
+            echo "No runtime log found"
+          fi
 
       - name: Publish summary
         if: always()

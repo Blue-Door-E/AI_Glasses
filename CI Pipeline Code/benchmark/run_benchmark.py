@@ -202,15 +202,13 @@ def run(
     # --- Setup ---
     overlay = _setup_ble_stub(runtime_dir)
 
-    # --- Start tegrastats ---
+    # --- Start tegrastats (may already be running on the host) ---
     tegra_proc = None
     try:
         tegra_proc = _start_tegrastats(tegra_log, cfg["tegrastats_interval_ms"])
+        time.sleep(1)  # give tegrastats a moment to start
     except FileNotFoundError:
-        print("[Harness] WARNING: tegrastats not found, skipping host metrics")
-
-    # Give tegrastats a moment to start
-    time.sleep(1)
+        print("[Harness] tegrastats not found in container (expected — host runs it)")
 
     # --- Start replay server ---
     replay_proc = _start_replay(video, REPLAY_HOST, REPLAY_PORT, REPLAY_FPS)
@@ -325,12 +323,16 @@ def run(
     md = summary_to_markdown(summary)
     print(md)
 
-    # Write to GITHUB_STEP_SUMMARY if available
+    # Write to GITHUB_STEP_SUMMARY if available and the file exists
+    # (inside Docker the env var may point to a host path that doesn't exist)
     step_summary = os.getenv("GITHUB_STEP_SUMMARY")
-    if step_summary:
-        with open(step_summary, "a") as f:
-            f.write(md)
-            f.write("\n")
+    if step_summary and os.path.exists(os.path.dirname(step_summary) or "."):
+        try:
+            with open(step_summary, "a") as f:
+                f.write(md)
+                f.write("\n")
+        except OSError:
+            pass
 
     return 0 if exit_code == 0 else 1
 
