@@ -54,6 +54,14 @@ jobs:
       BENCH_DOCKER_IMAGE: edith-glasses:jp64
 
     steps:
+      - name: Pre-clean workspace (fix root-owned files from Docker)
+        if: always()
+        shell: bash
+        run: |
+          sudo find "${{ github.workspace }}" -mindepth 1 \
+            \( -name '__pycache__' -o -name '_bench_overlay' -o -name 'benchmark_artifacts' \) \
+            -exec rm -rf {} + 2>/dev/null || true
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -174,3 +182,11 @@ jobs:
             benchmark_artifacts/runtime_stdout.log
             benchmark_artifacts/nsight/
           retention-days: 30
+
+      - name: Post-clean root-owned files from Docker
+        if: always()
+        shell: bash
+        run: |
+          sudo find "${{ github.workspace }}" -mindepth 1 \
+            \( -name '__pycache__' -o -name '_bench_overlay' -o -name 'benchmark_artifacts' \) \
+            -exec rm -rf {} + 2>/dev/null || true
