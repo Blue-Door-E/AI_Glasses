@@ -260,17 +260,59 @@ def run(
     )
     print(f"[Harness] Runtime pid={runtime_proc.pid}")
 
-    # --- Wait for completion or timeout ---
+    # --- Wait for replay to finish, then give runtime a grace period ---
+    # The runtime reconnects forever by design, so we watch the replay
+    # server: once the video is fully sent, we allow a short grace period
+    # for the runtime to process remaining frames, then terminate it.
+    harness_terminated = False
     try:
-        stdout_bytes, _ = runtime_proc.communicate(timeout=cfg["timeout_s"])
-    except subprocess.TimeoutExpired:
-        print(f"[Harness] Timeout after {cfg['timeout_s']}s, terminating runtime")
-        runtime_proc.terminate()
-        try:
-            stdout_bytes, _ = runtime_proc.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
-            runtime_proc.kill()
-            stdout_bytes, _ = runtime_proc.communicate()
+        # Wait for either the runtime to exit on its own or the full timeout
+        # Check periodically if the replay server has finished
+        deadline = time.monotonic() + cfg["timeout_s"]
+        grace_deadline = None
+        stdout_bytes = None
+
+        while True:
+            # Check if runtime exited on its own
+            ret = runtime_proc.poll()
+            if ret is not None:
+                stdout_bytes, _ = runtime_proc.communicate()
+                break
+
+            # Check if replay server finished (video fully sent)
+            if grace_deadline is None and replay_proc.poll() is not None:
+                grace_deadline = time.monotonic() + 5  # 5s grace after replay ends
+                print("[Harness] Replay finished, giving runtime 5s to wrap up")
+
+            # Grace period expired — terminate cleanly
+            if grace_deadline and time.monotonic() >= grace_deadline:
+                print("[Harness] Grace period over, terminating runtime")
+                runtime_proc.terminate()
+                harness_terminated = True
+                try:
+                    stdout_bytes, _ = runtime_proc.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    runtime_proc.kill()
+                    stdout_bytes, _ = runtime_proc.communicate()
+                break
+
+            # Hard timeout — something is stuck
+            if time.monotonic() >= deadline:
+                print(f"[Harness] Timeout after {cfg['timeout_s']}s, terminating runtime")
+                runtime_proc.terminate()
+                try:
+                    stdout_bytes, _ = runtime_proc.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    runtime_proc.kill()
+                    stdout_bytes, _ = runtime_proc.communicate()
+                break
+
+            time.sleep(0.5)
+
+    except Exception as exc:
+        print(f"[Harness] Unexpected error waiting for runtime: {exc}")
+        runtime_proc.kill()
+        stdout_bytes, _ = runtime_proc.communicate()
 
     t_end = time.monotonic()
     duration_s = t_end - t_start
@@ -302,6 +344,13 @@ def run(
 
     # --- Parse metrics ---
     runtime_metrics = _collect_runtime_metrics(stdout_text, exit_code, duration_s)
+
+    # If the harness terminated the runtime after the replay finished and
+    # frames were processed, treat it as a clean run (exit 0) for reporting.
+    if harness_terminated and runtime_metrics["frames_processed"] > 0:
+        runtime_metrics["exit_code"] = 0
+        print(f"[Harness] Replay complete with {runtime_metrics['frames_processed']} frames — marking as OK")
+
     runtime_json_path = arts / "runtime_metrics.json"
     runtime_json_path.write_text(json.dumps(runtime_metrics, indent=2))
 
@@ -338,6 +387,10 @@ def run(
         except OSError:
             pass
 
+    # Harness-terminated after replay finished is a clean exit if frames
+    # were actually processed (runtime loops forever reconnecting by design).
+    if harness_terminated and runtime_metrics["frames_processed"] > 0:
+        return 0
     return 0 if exit_code == 0 else 1
 
 
