@@ -1,0 +1,235 @@
+name: Jetson Benchmark
+
+on:
+  pull_request:
+    paths:
+      - "Jetson Code/**"
+      - "CI Pipeline Code/benchmark/**"
+      - ".github/workflows/jetson-benchmark.yml"
+
+  schedule:
+    # Nightly at 03:00 UTC
+    - cron: "0 3 * * *"
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Benchmark mode"
+        required: true
+        default: "pr-short"
+        type: choice
+        options:
+          - pr-short
+          - nightly-long
+
+jobs:
+  # ----------------------------------------------------------------
+  # Determine which mode to run
+  # ----------------------------------------------------------------
+  resolve-mode:
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.pick.outputs.mode }}
+    steps:
+      - id: pick
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "mode=nightly-long" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=pr-short" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ----------------------------------------------------------------
+  # Run the benchmark on the self-hosted Jetson runner
+  # ----------------------------------------------------------------
+  benchmark:
+    needs: resolve-mode
+    runs-on: [self-hosted, linux, arm64]
+
+    env:
+      BENCH_MODE: ${{ needs.resolve-mode.outputs.mode }}
+      BENCH_DOCKER_IMAGE: edith-glasses:jp64
+
+    steps:
+      - name: Fix root-owned files from prior Docker run
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}" 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log runner info
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Runner: $(hostname)"
+          cat /etc/os-release
+          uname -a
+          echo "Mode: $BENCH_MODE"
+
+      - name: Load Docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAR_PATHS=(
+            "$GITHUB_WORKSPACE/Jetson Code/Docker/edith-glasses_jp64.tar"
+            "/home/erick/EDITH_CODE/AI_Glasses/Jetson Code/Docker/edith-glasses_jp64.tar"
+          )
+          FOUND_TAR=""
+          for p in "${TAR_PATHS[@]}"; do
+            if [[ -f "$p" ]]; then
+              FOUND_TAR="$p"
+              break
+            fi
+          done
+          if [[ -n "$FOUND_TAR" ]]; then
+            echo "Loading image from $FOUND_TAR"
+            docker load -i "$FOUND_TAR"
+          elif docker image inspect edith-glasses:jp64 >/dev/null 2>&1; then
+            echo "Using preloaded image edith-glasses:jp64"
+          else
+            echo "::error::Docker image edith-glasses:jp64 not available"
+            exit 1
+          fi
+
+      - name: Select benchmark video
+        id: video
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Host paths — used to verify the file exists on the runner
+          SHORT_HOST="/home/erick/benchmark_videos/bench_2min.mp4"
+          LONG_HOST="/home/erick/benchmark_videos/bench_30min.mp4"
+
+          # Container paths — the volume is mounted as /benchmark_videos
+          SHORT_CONTAINER="/benchmark_videos/bench_2min.mp4"
+          LONG_CONTAINER="/benchmark_videos/bench_30min.mp4"
+
+          if [[ "$BENCH_MODE" == "nightly-long" ]]; then
+            HOST_VIDEO="$LONG_HOST"
+            CONTAINER_VIDEO="$LONG_CONTAINER"
+          else
+            HOST_VIDEO="$SHORT_HOST"
+            CONTAINER_VIDEO="$SHORT_CONTAINER"
+          fi
+
+          if [[ ! -f "$HOST_VIDEO" ]]; then
+            echo "::error::Benchmark video not found: $HOST_VIDEO"
+            echo "Place benchmark videos in /home/erick/benchmark_videos/"
+            exit 1
+          fi
+          echo "video=$CONTAINER_VIDEO" >> "$GITHUB_OUTPUT"
+          echo "Selected video: $HOST_VIDEO (container: $CONTAINER_VIDEO)"
+
+      - name: Start tegrastats on host
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACTS_DIR="$GITHUB_WORKSPACE/benchmark_artifacts"
+          mkdir -p "$ARTIFACTS_DIR"
+
+          INTERVAL=500
+          if [[ "$BENCH_MODE" == "nightly-long" ]]; then
+            INTERVAL=1000
+          fi
+
+          # tegrastats is a host-level Jetson tool — must run outside Docker
+          if command -v tegrastats &>/dev/null; then
+            tegrastats --interval "$INTERVAL" > "$ARTIFACTS_DIR/tegrastats.log" 2>&1 &
+            echo "$!" > "$ARTIFACTS_DIR/tegrastats.pid"
+            echo "tegrastats started (pid=$(cat "$ARTIFACTS_DIR/tegrastats.pid"), interval=${INTERVAL}ms)"
+          else
+            echo "::warning::tegrastats not found on host"
+          fi
+
+      - name: Run benchmark in container
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            --runtime nvidia \
+            --network host \
+            --entrypoint /bin/bash \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "/home/erick/benchmark_videos:/benchmark_videos:ro" \
+            -v "/home/CI_Pipeline/AI_Glasses/Jetson Code/Code/config.py:/workspace/Jetson Code/Code/config.py:ro" \
+            -v "/home/CI_Pipeline/AI_Glasses/Jetson Code/Code/outputs:/workspace/Jetson Code/Code/model/Hide:ro" \
+            -w /workspace \
+            -e PYTHONPATH="/workspace/Jetson Code/Code" \
+            -e GLASSES_HOST="127.0.0.1" \
+            -e GLASSES_PORT="8080" \
+            -e GITHUB_SHA="${GITHUB_SHA}" \
+            -e RUNNER_NAME="${RUNNER_NAME:-}" \
+            -e BENCH_MODE="${BENCH_MODE}" \
+            -e BENCH_DOCKER_IMAGE="${BENCH_DOCKER_IMAGE}" \
+            edith-glasses:jp64 \
+            -lc "
+              python3 'CI Pipeline Code/benchmark/run_benchmark.py' \
+                --mode '${BENCH_MODE}' \
+                --video '${{ steps.video.outputs.video }}' \
+                --artifacts-dir /workspace/benchmark_artifacts \
+                --runtime-dir '/workspace/Jetson Code/Code' \
+                --commit '${GITHUB_SHA}'
+            "
+
+      - name: Stop tegrastats
+        if: always()
+        shell: bash
+        run: |
+          PID_FILE="$GITHUB_WORKSPACE/benchmark_artifacts/tegrastats.pid"
+          if [[ -f "$PID_FILE" ]]; then
+            kill "$(cat "$PID_FILE")" 2>/dev/null || true
+            rm -f "$PID_FILE"
+            echo "tegrastats stopped"
+          fi
+
+      - name: Print runtime log (debug)
+        if: always()
+        shell: bash
+        run: |
+          LOG="$GITHUB_WORKSPACE/benchmark_artifacts/runtime_stdout.log"
+          if [[ -f "$LOG" ]]; then
+            echo "=== Runtime stdout ==="
+            cat "$LOG"
+          else
+            echo "No runtime log found"
+          fi
+
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          MD="$GITHUB_WORKSPACE/benchmark_artifacts/summary.md"
+          if [[ -f "$MD" ]]; then
+            cat "$MD" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::No summary.md found"
+          fi
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jetson-benchmark-${{ env.BENCH_MODE }}-${{ github.sha }}
+          path: |
+            benchmark_artifacts/summary.json
+            benchmark_artifacts/summary.csv
+            benchmark_artifacts/summary.md
+            benchmark_artifacts/tegrastats.log
+            benchmark_artifacts/tegrastats_summary.json
+            benchmark_artifacts/runtime_metrics.json
+            benchmark_artifacts/runtime_stdout.log
+            benchmark_artifacts/nsight/
+          retention-days: 30
+
+      - name: Post-clean root-owned files from Docker
+        if: always()
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}" 2>/dev/null || true

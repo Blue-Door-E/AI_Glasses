@@ -18,6 +18,11 @@ jobs:
     runs-on: [self-hosted, linux, arm64]
 
     steps:
+      - name: Fix root-owned files from prior Docker run
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}" 2>/dev/null || true
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -70,3 +75,9 @@ jobs:
             -e PYTHONPATH="/workspace/Jetson Code/Code" \
             edith-glasses:jp64 \
             -lc 'python3 "CI Pipeline Code/smoke_test.py"'
+
+      - name: Post-clean root-owned files from Docker
+        if: always()
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "${{ github.workspace }}" 2>/dev/null || true
