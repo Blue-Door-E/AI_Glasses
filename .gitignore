@@ -58,3 +58,5 @@ __pycache__/
 .mypy_cache/
 ML Notebook/captures/mp4/**
 .gitignore
+Jetson Code/model/**
+Jetson Code/Code/outputs/**
