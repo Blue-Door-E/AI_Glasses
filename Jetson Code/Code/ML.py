@@ -20,13 +20,7 @@ try:
 except Exception:
     CV2_OK = False
 
-# TensorRT availability (pre-installed on JetPack)
-TRT_OK = False
-try:
-    import tensorrt as trt
-    TRT_OK = True
-except Exception:
-    pass
+
 
 if TORCH_OK:
     _no_grad = torch.no_grad
